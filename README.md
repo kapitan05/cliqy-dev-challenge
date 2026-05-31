@@ -1,4 +1,4 @@
-# Cliqy Studio — Dev Challenge
+# MyCliqy Studio — Dev Challenge
 
 > **Czas:** maksymalnie 3 godziny  
 > **Deadline:** 7 dni od otrzymania zaproszenia  
@@ -8,7 +8,7 @@
 
 ## Kontekst
 
-[Cliqy Studio](https://studio.cliqy.ai) buduje systemy automatyzacji AI dla polskich firm (10–100 osób).
+[mycliqy studio](https://studio.mycliqy.com) buduje systemy automatyzacji AI dla polskich firm (10–100 osób).
 
 Jeden z produktów to **Panel Weryfikacji** — operator widzi wiadomości od klientów razem z draftem odpowiedzi wygenerowanym przez AI i zatwierdza je jednym kliknięciem przed wysyłką. System używany jest m.in. w agencjach, sklepach e-commerce i firmach logistycznych.
 
@@ -146,4 +146,4 @@ Powodzenia!
 
 ---
 
-*Cliqy Studio · studio.cliqy.ai · BMP Software sp. z o.o.*
+*mycliqy studio · studio.mycliqy.com · BMP Software sp. z o.o.*
