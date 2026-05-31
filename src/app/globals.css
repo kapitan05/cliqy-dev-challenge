@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #09090b;
+  --card: rgba(255, 255, 255, 0.04);
+  --border: rgba(255, 255, 255, 0.08);
+  --ink: #f4f4f5;
+  --ink-dim: rgba(244, 244, 245, 0.6);
+  --emerald: #34d399;
+  --amber: #f59e0b;
+  --red: #f87171;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
