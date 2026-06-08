@@ -1,13 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { QueueItem, MessageStatus, MessageCategory } from '@/types'
 
-// ────────────────────────────────────────────────────────────
-// Dane przykładowe — pozwalają zobaczyć jak wygląda gotowy UI
-// zanim zaimplementujesz endpoint /api/classify.
-// Możesz je zastąpić lub rozszerzyć według potrzeb.
-// ────────────────────────────────────────────────────────────
 const SEED_ITEMS: QueueItem[] = [
   {
     id: '1',
@@ -46,9 +41,6 @@ const SEED_ITEMS: QueueItem[] = [
   },
 ]
 
-// ────────────────────────────────────────────────────────────
-// Kolory etykiet — możesz dostosować
-// ────────────────────────────────────────────────────────────
 const CATEGORY_STYLES: Record<MessageCategory, string> = {
   zamówienie: 'bg-emerald-900/40 text-emerald-400 border border-emerald-700/40',
   pytanie: 'bg-blue-900/40 text-blue-400 border border-blue-700/40',
@@ -62,34 +54,64 @@ const PRIORITY_DOT: Record<string, string> = {
   low: 'bg-zinc-500',
 }
 
-// ────────────────────────────────────────────────────────────
-// QueuePage — główny komponent
-//
-// TODO (krok 2): Zaimplementuj kolejkę weryfikacji.
-//
-// Minimalne wymagania:
-//   ✅ Lista wiadomości z oryginałem + draft AI
-//   ✅ Przyciski: Zatwierdź / Edytuj / Odrzuć
-//   ✅ Zmiana statusu (pending → approved / rejected)
-//   ✅ Filtrowanie po kategorii
-//
-// SEED_ITEMS powyżej pokazują oczekiwaną strukturę danych.
-// Możesz też podłączyć formularz który wywołuje POST /api/classify
-// i dodaje wynik do kolejki — to dobry punkt na własną funkcję (krok 3).
-// ────────────────────────────────────────────────────────────
+const STORAGE_KEY = 'cliqy_queue_items'
 
 export default function QueuePage() {
   const [items, setItems] = useState<QueueItem[]>(SEED_ITEMS)
+  const [isLoaded, setIsLoaded] = useState<boolean>(false)
   const [filter, setFilter] = useState<MessageCategory | 'all'>('all')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editText, setEditText] = useState<string>('')
 
-  // TODO: Zaimplementuj logikę akcji
-  function handleAction(_id: string, _action: MessageStatus) {
-    // Wskazówka: użyj setItems z map() — nie mutuj tablicy bezpośrednio
+  // Load from localStorage once on first client mount only.
+  // Runs after hydration so SSR and client HTML always match on first paint.
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored) {
+        setItems(JSON.parse(stored) as QueueItem[])
+      }
+    } catch {
+      // Corrupted storage — fall back to seed data already in state
+    }
+    setIsLoaded(true)
+  }, [])
+
+  // Persist to localStorage whenever items change, but only after the
+  // initial load so we never overwrite storage with the SSR seed state.
+  useEffect(() => {
+    if (!isLoaded) return
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
+    } catch {
+      // Storage quota exceeded or unavailable — silently ignore
+    }
+  }, [items, isLoaded])
+
+  function handleAction(id: string, action: MessageStatus) {
+    setItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, status: action } : item)),
+    )
   }
 
-  // TODO: Zaimplementuj edycję draft_reply
-  function handleEditReply(_id: string, _newReply: string) {
-    // Wskazówka: j.w.
+  function handleEditReply(id: string, newReply: string) {
+    setItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, draft_reply: newReply } : item)),
+    )
+  }
+
+  function startEditing(item: QueueItem) {
+    setEditingId(item.id)
+    setEditText(item.draft_reply)
+  }
+
+  function saveEdit(id: string) {
+    handleEditReply(id, editText)
+    setEditingId(null)
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
   }
 
   const visible = filter === 'all' ? items : items.filter((i) => i.category === filter)
@@ -124,74 +146,119 @@ export default function QueuePage() {
       </div>
 
       {/* ── Lista elementów ────────────────── */}
-      <div className="flex flex-col gap-4">
-        {visible.length === 0 && (
+      <div className="flex flex-col gap-4" aria-busy={!isLoaded}>
+        {!isLoaded && (
+          <p className="text-zinc-600 text-sm py-12 text-center">Ładowanie…</p>
+        )}
+
+        {isLoaded && visible.length === 0 && (
           <p className="text-zinc-500 text-sm py-12 text-center">Brak elementów w tej kategorii.</p>
         )}
 
-        {visible.map((item) => (
-          <article
-            key={item.id}
-            className={`rounded-xl border p-5 transition-opacity ${
-              item.status !== 'pending' ? 'opacity-50' : ''
-            }`}
-            style={{ background: 'var(--card)', borderColor: 'var(--border)' }}
-          >
-            {/* Nagłówek karty */}
-            <div className="flex items-start justify-between gap-4 mb-3">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${CATEGORY_STYLES[item.category]}`}>
-                  {item.category}
+        {isLoaded && visible.map((item) => {
+          const isEditing = editingId === item.id
+
+          return (
+            <article
+              key={item.id}
+              className={`rounded-xl border p-5 transition-opacity ${
+                item.status !== 'pending' ? 'opacity-50' : ''
+              }`}
+              style={{ background: 'var(--card)', borderColor: 'var(--border)' }}
+            >
+              {/* Nagłówek karty */}
+              <div className="flex items-start justify-between gap-4 mb-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${CATEGORY_STYLES[item.category]}`}>
+                    {item.category}
+                  </span>
+                  <span className="flex items-center gap-1 text-xs text-zinc-500">
+                    <span className={`w-1.5 h-1.5 rounded-full ${PRIORITY_DOT[item.priority]}`} />
+                    {item.priority}
+                  </span>
+                  <span className="text-xs text-zinc-600">{item.company}</span>
+                </div>
+                {/* suppressHydrationWarning: seed data uses new Date() at module load time,
+                    which differs between server and client renders */}
+                <span suppressHydrationWarning className="text-xs text-zinc-600 shrink-0">
+                  {new Date(item.created_at).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}
                 </span>
-                <span className="flex items-center gap-1 text-xs text-zinc-500">
-                  <span className={`w-1.5 h-1.5 rounded-full ${PRIORITY_DOT[item.priority]}`} />
-                  {item.priority}
-                </span>
-                <span className="text-xs text-zinc-600">{item.company}</span>
               </div>
-              <span className="text-xs text-zinc-600 shrink-0">
-                {new Date(item.created_at).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
 
-            {/* Wiadomość klienta */}
-            <div className="mb-3">
-              <p className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Wiadomość</p>
-              <p className="text-sm text-zinc-200">{item.message}</p>
-            </div>
-
-            {/* Draft AI */}
-            <div className="mb-4 p-3 rounded-lg bg-zinc-900/60 border border-zinc-800">
-              <p className="text-xs text-zinc-500 uppercase tracking-wider mb-1">
-                Draft AI · {Math.round(item.confidence * 100)}% pewności
-              </p>
-              {/* TODO: Zamień na <textarea> z edycją */}
-              <p className="text-sm text-zinc-300">{item.draft_reply}</p>
-            </div>
-
-            {/* Akcje */}
-            {item.status === 'pending' && (
-              <div className="flex gap-2">
-                {/* TODO: Podłącz do handleAction */}
-                <button className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-900/40 text-emerald-400 border border-emerald-700/40 hover:bg-emerald-800/50 transition-colors">
-                  ✅ Zatwierdź
-                </button>
-                <button className="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700 transition-colors">
-                  ✏️ Edytuj
-                </button>
-                <button className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-900/40 text-red-400 border border-red-700/40 hover:bg-red-800/50 transition-colors">
-                  ❌ Odrzuć
-                </button>
+              {/* Wiadomość klienta */}
+              <div className="mb-3">
+                <p className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Wiadomość</p>
+                <p className="text-sm text-zinc-200">{item.message}</p>
               </div>
-            )}
 
-            {item.status !== 'pending' && (
-              <p className="text-xs text-zinc-600 italic">
-                {item.status === 'approved' ? '✅ Zatwierdzone' : '❌ Odrzucone'}
-              </p>
-            )}
-          </article>
-        ))}
+              {/* Draft AI */}
+              <div className="mb-4 p-3 rounded-lg bg-zinc-900/60 border border-zinc-800">
+                <p className="text-xs text-zinc-500 uppercase tracking-wider mb-1">
+                  Draft AI · {Math.round(item.confidence * 100)}% pewności
+                </p>
+                {isEditing ? (
+                  <textarea
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    rows={3}
+                    className="w-full text-sm text-zinc-300 bg-transparent border border-zinc-700 rounded-md p-2 resize-none focus:outline-none focus:border-zinc-500"
+                  />
+                ) : (
+                  <p className="text-sm text-zinc-300">{item.draft_reply}</p>
+                )}
+              </div>
+
+              {/* Akcje */}
+              {item.status === 'pending' && (
+                <div className="flex gap-2">
+                  {isEditing ? (
+                    <>
+                      <button
+                        onClick={() => saveEdit(item.id)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-900/40 text-blue-400 border border-blue-700/40 hover:bg-blue-800/50 transition-colors"
+                      >
+                        💾 Zapisz
+                      </button>
+                      <button
+                        onClick={cancelEdit}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 transition-colors"
+                      >
+                        Anuluj
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => handleAction(item.id, 'approved')}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-900/40 text-emerald-400 border border-emerald-700/40 hover:bg-emerald-800/50 transition-colors"
+                      >
+                        ✅ Zatwierdź
+                      </button>
+                      <button
+                        onClick={() => startEditing(item)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700 transition-colors"
+                      >
+                        ✏️ Edytuj
+                      </button>
+                      <button
+                        onClick={() => handleAction(item.id, 'rejected')}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-900/40 text-red-400 border border-red-700/40 hover:bg-red-800/50 transition-colors"
+                      >
+                        ❌ Odrzuć
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {item.status !== 'pending' && (
+                <p className="text-xs text-zinc-600 italic">
+                  {item.status === 'approved' ? '✅ Zatwierdzone' : '❌ Odrzucone'}
+                </p>
+              )}
+            </article>
+          )
+        })}
       </div>
     </main>
   )
