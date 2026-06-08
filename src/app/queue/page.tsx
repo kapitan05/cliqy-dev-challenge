@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { QueueItem, MessageStatus, MessageCategory } from '@/types'
+import type { QueueItem, MessageStatus, MessageCategory, ClassifyResponse } from '@/types'
 
 const SEED_ITEMS: QueueItem[] = [
   {
@@ -63,6 +63,13 @@ export default function QueuePage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editText, setEditText] = useState<string>('')
 
+  // ── Add-message form ──────────────────────────────────────────────────────
+  const [formOpen, setFormOpen] = useState<boolean>(false)
+  const [formCompany, setFormCompany] = useState<string>('')
+  const [formMessage, setFormMessage] = useState<string>('')
+  const [isLoading, setIsLoading] = useState<boolean>(false)
+  const [formError, setFormError] = useState<string | null>(null)
+
   // Load from localStorage once on first client mount only.
   // Runs after hydration so SSR and client HTML always match on first paint.
   useEffect(() => {
@@ -114,6 +121,41 @@ export default function QueuePage() {
     setEditingId(null)
   }
 
+  async function handleSubmitMessage(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setIsLoading(true)
+    setFormError(null)
+    try {
+      const res = await fetch('/api/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: formMessage, company: formCompany }),
+      })
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string }
+        setFormError(data.error ?? `Błąd serwera (${res.status})`)
+        return
+      }
+      const classified = (await res.json()) as ClassifyResponse
+      const newItem: QueueItem = {
+        ...classified,
+        id: crypto.randomUUID(),
+        message: formMessage,
+        company: formCompany,
+        status: 'pending',
+        created_at: new Date().toISOString(),
+      }
+      setItems((prev) => [newItem, ...prev])
+      setFormMessage('')
+      setFormCompany('')
+      setFormOpen(false)
+    } catch {
+      setFormError('Nie udało się połączyć z serwerem.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const visible = filter === 'all' ? items : items.filter((i) => i.category === filter)
   const pending = items.filter((i) => i.status === 'pending').length
 
@@ -126,6 +168,74 @@ export default function QueuePage() {
         <p className="text-zinc-400 mt-1 text-sm">
           {pending} oczekujących · {items.length} łącznie
         </p>
+      </div>
+
+      {/* ── Formularz dodawania ───────────────── */}
+      <div className="mb-6">
+        <button
+          onClick={() => { setFormOpen((v) => !v); setFormError(null) }}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700 transition-colors"
+        >
+          <span className="text-base leading-none">{formOpen ? '−' : '+'}</span>
+          Dodaj wiadomość
+        </button>
+
+        {formOpen && (
+          <form
+            onSubmit={handleSubmitMessage}
+            className="mt-3 p-4 rounded-xl border flex flex-col gap-3"
+            style={{ background: 'var(--card)', borderColor: 'var(--border)' }}
+          >
+            <div>
+              <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-1">
+                Firma
+              </label>
+              <input
+                type="text"
+                value={formCompany}
+                onChange={(e) => setFormCompany(e.target.value)}
+                required
+                placeholder="np. Sklep meblowy Premium"
+                className="w-full text-sm text-zinc-200 bg-zinc-900/60 border border-zinc-700 rounded-lg px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 transition-colors"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-1">
+                Wiadomość
+              </label>
+              <textarea
+                value={formMessage}
+                onChange={(e) => setFormMessage(e.target.value)}
+                required
+                rows={3}
+                placeholder="Wklej lub wpisz wiadomość od klienta…"
+                className="w-full text-sm text-zinc-200 bg-zinc-900/60 border border-zinc-700 rounded-lg px-3 py-2 resize-none placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 transition-colors"
+              />
+            </div>
+
+            {formError && (
+              <p className="text-xs text-red-400">{formError}</p>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-white text-black hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoading ? 'AI analizuje…' : 'Klasyfikuj i dodaj'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setFormOpen(false); setFormError(null) }}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 transition-colors"
+              >
+                Anuluj
+              </button>
+            </div>
+          </form>
+        )}
       </div>
 
       {/* ── Filtr kategorii ────────────────── */}
